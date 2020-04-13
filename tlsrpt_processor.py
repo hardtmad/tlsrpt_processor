@@ -40,8 +40,8 @@ def show_help():
 try:
 	opts, args = getopt.getopt(sys.argv[1:],"i:o:h",["input=","output-style=","help"])
 except getopt.GetoptError as err:
-	print str(err)
-	print show_help()
+	print (str(err))
+	print (show_help())
 	sys.exit(2)
 input_file = None
 output_style = None
@@ -213,7 +213,7 @@ with open(input_file) as json_file:
 					sys.stdout.write(failure_error_code)
 
 				else:
-					print "Unrecognized output style"
+					print ("Unrecognized output style")
 				sys.stdout.write('\n')
 		else:
 			if output_style in ('kv'):
@@ -248,5 +248,5 @@ with open(input_file) as json_file:
 				sys.stdout.write(result_type + csv_separator)
 
 			else:
-				print "Unrecognized output style"
+				print ("Unrecognized output style")
 			sys.stdout.write('\n')
