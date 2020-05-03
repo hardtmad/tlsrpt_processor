@@ -75,6 +75,7 @@ except IOError:
 process_time = "%15.0f" % time.time()
 process_time = process_time.strip()
 csv_separator = "|"
+rpt_tail = ""
 
 with open(input_file) as json_file:
 	try:
@@ -87,10 +88,10 @@ with open(input_file) as json_file:
 		organization_name = data["organization-name"]
 	except KeyError:
 		organization_name = ""
-	try: 
-		start_date_time = data["date-range"]["start-datetime"] 
-	except KeyError: 
-		start_date_time="" 
+	try:
+		start_date_time = data["date-range"]["start-datetime"]
+	except KeyError:
+		start_date_time=""
 	try:
 		end_date_time = data["date-range"]["end-datetime"]
 	except KeyError:
@@ -122,7 +123,7 @@ with open(input_file) as json_file:
 			policy_mx_host = policy_set["policy"]["mx-host"]
 		except KeyError:
 			policy_mx_host = ""
-		try: 
+		try:
 			policy_success_count = policy_set["summary"]["total-successful-session-count"]
 		except KeyError:
 			policy_success_count = 0
@@ -168,100 +169,65 @@ with open(input_file) as json_file:
 					failure_error_code = ""
 
 				if output_style in (['kv', 'gzip-json']):
-
-					rpt = ('process-time="' + process_time + '"')
-					rpt += (' report-id="' + report_id + '"')
-					rpt += (' organization-name="' + organization_name + '"')
-					rpt += (' start-date-time="' + start_date_time + '"')
-					rpt += (' end-date-time="' + end_date_time + '"')
-					rpt += (' contact-info="' + contact_info + '"')
-					rpt += (' policy-type="' + policy_type + '"')
-					rpt += (' policy-string="' + ",".join(policy_string) + '"')
-					rpt += (' policy-domain="' + policy_domain + '"')
-					rpt += (' policy-mx-host="' + policy_mx_host + '"')
-					rpt += (' policy-success-count="' + str(policy_success_count) + '"')
-					rpt += (' policy-failure-count="' + str(policy_failure_count) + '"')
-					rpt += (' result-type="' + result_type + '"')
-					rpt += (' sending-ip="' + sending_ip + '"')
-					rpt += (' receiving-mx-hostname="' + receiving_mx_hostname + '"')
-					rpt += (' receiving-mx-helo="' + receiving_mx_helo + '"')
-					rpt += (' receiving-ip="' + receiving_ip + '"')
-					rpt += (' failed-count="' + str(failed_session_count) + '"')
-					rpt += (' additional-info="' + additional_info + '"')
-					rpt += (' failure-error-code="' + failure_error_code + '"')
-					if output_style == 'kv':
-						print(rpt)
-					else:
-						rpt_fn = report_id + ".json.gz"
-						rpt_bytes = rpt.encode('utf-8')
-						with gzip.GzipFile(rpt_fn, 'w') as fout:
-							fout.write(rpt_bytes)
+					rpt_tail = (' result-type="' + result_type + '"')
+					rpt_tail += (' sending-ip="' + sending_ip + '"')
+					rpt_tail += (' receiving-mx-hostname="' + receiving_mx_hostname + '"')
+					rpt_tail += (' receiving-mx-helo="' + receiving_mx_helo + '"')
+					rpt_tail += (' receiving-ip="' + receiving_ip + '"')
+					rpt_tail += (' failed-count="' + str(failed_session_count) + '"')
+					rpt_tail += (' additional-info="' + additional_info + '"')
+					rpt_tail += (' failure-error-code="' + failure_error_code + '"')
 
 				elif output_style in ('csv'):
-
-					rpt = (process_time + csv_separator)
-					rpt += (report_id + csv_separator)
-					rpt += ('"' + organization_name + '"' + csv_separator)
-					rpt += (start_date_time + csv_separator)
-					rpt += (end_date_time + csv_separator)
-					rpt += (contact_info + csv_separator)
-					rpt += (policy_type + csv_separator)
-					rpt += ('"' + csv_separator.join(policy_string) + '"' + csv_separator)
-					rpt += (policy_domain + csv_separator)
-					rpt += ('"' + policy_mx_host + '"' + csv_separator)
-					rpt += (str(policy_success_count) + csv_separator)
-					rpt += (str(policy_failure_count) + csv_separator)
-					rpt += (result_type + csv_separator)
-					rpt += (sending_ip + csv_separator)
-					rpt += (receiving_mx_hostname + csv_separator)
-					rpt += (receiving_mx_helo + csv_separator)
-					rpt += (receiving_ip + csv_separator)
-					rpt += (str(failed_session_count) + csv_separator)
-					rpt += ('"' + additional_info + '"' + csv_separator)
-					rpt += (failure_error_code)
-					print(rpt)
-
+					rpt_tail = (sending_ip + csv_separator)
+					rpt_tail += (receiving_mx_hostname + csv_separator)
+					rpt_tail += (receiving_mx_helo + csv_separator)
+					rpt_tail += (receiving_ip + csv_separator)
+					rpt_tail += (str(failed_session_count) + csv_separator)
+					rpt_tail += ('"' + additional_info + '"' + csv_separator)
+					rpt_tail += (failure_error_code)
 				else:
 					print ("Unrecognized output style")
-		else:
-			if output_style in (['kv', 'gzip-json']):
 
-				rpt = ('process-time="' + process_time + '"')
-				rpt += (' report-id="' + report_id + '"')
-				rpt += (' organization-name="' + organization_name + '"')
-				rpt += (' start-date-time="' + start_date_time + '"')
-				rpt += (' end-date-time="' + end_date_time + '"')
-				rpt += (' contact-info="' + contact_info + '"')
-				rpt += (' policy-type="' + policy_type + '"')
-				rpt += (' policy-string="' + ",".join(policy_string) + '"')
-				rpt += (' policy-domain="' + policy_domain + '"')
-				rpt += (' policy-mx-host="' + policy_mx_host + '"')
-				rpt += (' policy-success-count="' + str(policy_success_count) + '"')
-				rpt += (' policy-failure-count="' + str(policy_failure_count) + '"')
-				if output_style == 'kv':
-					print(rpt)
-				else:
-					rpt_fn = report_id + ".json.gz"
-					rpt_bytes = rpt.encode('utf-8')
-					with gzip.GzipFile(rpt_fn, 'w') as fout:
-						fout.write(rpt_bytes)
+		if output_style in (['kv', 'gzip-json']):
 
-			elif output_style in ('csv'):
-
-				rpt = (process_time + csv_separator)
-				rpt += (report_id + csv_separator)
-				rpt += ('"' + organization_name + '"' + csv_separator)
-				rpt += (start_date_time + csv_separator)
-				rpt += (end_date_time + csv_separator)
-				rpt += (contact_info + csv_separator)
-				rpt += (policy_type + csv_separator)
-				rpt += ('"' + csv_separator.join(policy_string) + '"' + csv_separator)
-				rpt += (policy_domain + csv_separator)
-				rpt += ('"' + policy_mx_host + '"' + csv_separator)
-				rpt += (str(policy_success_count) + csv_separator)
-				rpt += (str(policy_failure_count) + csv_separator)
-				rpt += (result_type + csv_separator)
+			rpt = ('process-time="' + process_time + '"')
+			rpt += (' report-id="' + report_id + '"')
+			rpt += (' organization-name="' + organization_name + '"')
+			rpt += (' start-date-time="' + start_date_time + '"')
+			rpt += (' end-date-time="' + end_date_time + '"')
+			rpt += (' contact-info="' + contact_info + '"')
+			rpt += (' policy-type="' + policy_type + '"')
+			rpt += (' policy-string="' + ",".join(policy_string) + '"')
+			rpt += (' policy-domain="' + policy_domain + '"')
+			rpt += (' policy-mx-host="' + policy_mx_host + '"')
+			rpt += (' policy-success-count="' + str(policy_success_count) + '"')
+			rpt += (' policy-failure-count="' + str(policy_failure_count) + '"')
+			rpt += rpt_tail
+			if output_style == 'kv':
 				print(rpt)
-
 			else:
-				print ("Unrecognized output style")
+				rpt_fn = report_id + ".json.gz"
+				rpt_bytes = rpt.encode('utf-8')
+				with gzip.GzipFile(rpt_fn, 'w') as fout:
+					fout.write(rpt_bytes)
+
+		elif output_style in ('csv'):
+
+			rpt = (process_time + csv_separator)
+			rpt += (report_id + csv_separator)
+			rpt += ('"' + organization_name + '"' + csv_separator)
+			rpt += (start_date_time + csv_separator)
+			rpt += (end_date_time + csv_separator)
+			rpt += (contact_info + csv_separator)
+			rpt += (policy_type + csv_separator)
+			rpt += ('"' + csv_separator.join(policy_string) + '"' + csv_separator)
+			rpt += (policy_domain + csv_separator)
+			rpt += ('"' + policy_mx_host + '"' + csv_separator)
+			rpt += (str(policy_success_count) + csv_separator)
+			rpt += (str(policy_failure_count) + csv_separator)
+			rpt += rpt_tail
+			print(rpt)
+
+		else:
+			print ("Unrecognized output style")
