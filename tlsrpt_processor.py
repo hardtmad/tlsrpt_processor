@@ -17,217 +17,266 @@
 #This product includes software developed at Comcast ( http://www.comcast.com/)
 #
 #
-# Author: Alex Brotman (alex_brotman@comcast.com)
+# Authors: Alex Brotman (alex_brotman@comcast.com)
+#          Madeleine Hardt (hardtmad@gmail.com)
 #
 # Purpose: Parse a TLSRPT report, and output as specified
 #
-# Notes: RFC-TBD
+# Notes: RFC-8460
 #
 # URL: https://github.com/Comcast/tlsrpt_processor/
 #
 
-import json,sys,getopt,time
-import gzip
+import json,sys,getopt,time,gzip,requests
+
+csv_separator = "|"
+httpMaxRetries = 5
 
 def show_help():
 	print("")
-	print("This script should process a TLSRPT JSON file pass as an argument")
+	print("This script should process a TLSRPT JSON file passed as an argument")
 	print("Options are as follows:")
 	print("-h				Show this help message")
 	print("-i/-input 			Input file")
 	print("-o/-output-style		Output Style (values: kv,csv,gzip-json)")
+	print("-s/-send-method		Send Method  (values: http)")
+	print("-d/-destination 		Destination (http endpoint if applicable)")
 	print("")
 
-try:
-	opts, args = getopt.getopt(sys.argv[1:],"i:o:h",["input=","output-style=","help"])
-except getopt.GetoptError as err:
-	print (str(err))
-	print (show_help())
-	sys.exit(2)
-input_file = None
-output_style = None
-for o,a in opts:
-	if o in ("-h","-help"):
-		show_help()
-		sys.exit()
-	elif o in ("-i","-input"):
-		input_file = a
-	elif o in ("-o","-output-style"):
-		output_style = a
-		if a not in ("kv","csv","gzip-json"):
-			show_help()
+# Load input file information into a JSON object
+def parse_input(input_file, process_time):
+	rptJson = {}
+	with open(input_file) as json_file:
+		try:
+			data = json.load(json_file)
+		except ValueError:
+			print("Invalid JSON file")
 			sys.exit(1)
-	else:
-		assert False, "Unrecognized option"
 
-if input_file is None:
-	print("\nERROR: Input file is required")
-	show_help()
-	sys.exit(1)
-
-
-try:
-	open(input_file,"r")
-except IOError:
-	print("Input File does not exist or does not have the proper permissions")
-	sys.exit(1)
-
-process_time = "%15.0f" % time.time()
-process_time = process_time.strip()
-csv_separator = "|"
-rpt_tail = ""
-
-with open(input_file) as json_file:
-	try:
-		data = json.load(json_file)
-	except ValueError:
-		print("Invalid JSON file")
-		sys.exit(1)
-
-	try:
-		organization_name = data["organization-name"]
-	except KeyError:
-		organization_name = ""
-	try:
-		start_date_time = data["date-range"]["start-datetime"]
-	except KeyError:
-		start_date_time=""
-	try:
-		end_date_time = data["date-range"]["end-datetime"]
-	except KeyError:
-		end_date_time = ""
-	try:
-		contact_info = data["contact-info"]
-	except KeyError:
-		contact_info = ""
-	try:
-		report_id = data["report-id"]
-	except KeyError:
-		report_id = ""
-
-
-	for policy_set in data["policies"]:
 		try:
-			policy_type = policy_set["policy"]["policy-type"]
+			rptJson["organization_name"] = data["organization-name"]
 		except KeyError:
-			policy_type = ""
+			rptJson["organization_name"] = ""
 		try:
-			policy_string = policy_set["policy"]["policy-string"]
+			rptJson["start_date_time"] = data["date-range"]["start-datetime"]
 		except KeyError:
-			policy_string = ""
+			rptJson["start_date_time"] = ""
 		try:
-			policy_domain = policy_set["policy"]["policy-domain"]
+			rptJson["end_date_time"] = data["date-range"]["end-datetime"]
 		except KeyError:
-			policy_domain = ""
+			rptJson["end_date_time"] = ""
 		try:
-			policy_mx_host = policy_set["policy"]["mx-host"]
+			rptJson["contact_info"] = data["contact-info"]
 		except KeyError:
-			policy_mx_host = ""
+			rptJson["contact_info"] = ""
 		try:
-			policy_success_count = policy_set["summary"]["total-successful-session-count"]
+			rptJson["report_id"] = data["report-id"]
 		except KeyError:
-			policy_success_count = 0
-		try:
-			policy_failure_count = policy_set["summary"]["total-failure-session-count"]
-		except KeyError:
-			policy_failure_count = 0
+			rptJson["report_id"] = ""
 
+		for policy_set in data["policies"]:
+			try:
+				rptJson["policy_type"] = policy_set["policy"]["policy-type"]
+			except KeyError:
+				rptJson["policy_type"] = ""
+			try:
+				rptJson["policy_string"] = policy_set["policy"]["policy-string"]
+			except KeyError:
+				rptJson["policy_string"] = ""
+			try:
+				rptJson["policy_domain"] = policy_set["policy"]["policy-domain"]
+			except KeyError:
+				rptJson["policy_domain"] = ""
+			try:
+				rptJson["policy_mx_host"] = policy_set["policy"]["mx-host"]
+			except KeyError:
+				rptJson["policy_mx_host"] = ""
+			try:
+				rptJson["policy_success_count"] = policy_set["summary"]["total-successful-session-count"]
+			except KeyError:
+				rptJson["policy_success_count"] = 0
+			try:
+				rptJson["policy_failure_count"] = policy_set["summary"]["total-failure-session-count"]
+			except KeyError:
+				rptJson["policy_failure_count"] = 0
 
-		if 'failure-details' in policy_set:
-			for failure_details_set in policy_set["failure-details"]:
-				try:
-					result_type = failure_details_set["result-type"]
-				except KeyError:
-					result_type = ""
-				try:
-					sending_ip = failure_details_set["sending-mta-ip"]
-				except KeyError:
-					sending_ip = ""
-				try:
-					receiving_mx_hostname = failure_details_set["receiving-mx-hostname"]
-				except KeyError:
-					receiving_mx_hostname = ""
-				try:
-					receiving_mx_helo = failure_details_set["receiving-mx-helo"]
-				except KeyError:
-					receiving_mx_helo = ""
-				try:
-					receiving_ip = failure_details_set["receiving-ip"]
-				except KeyError:
-					receiving_ip = ""
-				try:
-					failed_session_count = failure_details_set["failed-session-count"]
-				except KeyError:
-					failed_session_count = 0
-				try:
-					additional_info = failure_details_set["additional-information"]
-				except KeyError:
-					additional_info = ""
-				try:
-					failure_error_code = failure_details_set["failure-error-code"]
-				except KeyError:
-					failure_error_code = ""
-
-				if output_style in (['kv', 'gzip-json']):
-					rpt_tail = (' result-type="' + result_type + '"')
-					rpt_tail += (' sending-ip="' + sending_ip + '"')
-					rpt_tail += (' receiving-mx-hostname="' + receiving_mx_hostname + '"')
-					rpt_tail += (' receiving-mx-helo="' + receiving_mx_helo + '"')
-					rpt_tail += (' receiving-ip="' + receiving_ip + '"')
-					rpt_tail += (' failed-count="' + str(failed_session_count) + '"')
-					rpt_tail += (' additional-info="' + additional_info + '"')
-					rpt_tail += (' failure-error-code="' + failure_error_code + '"')
-
-				elif output_style in ('csv'):
-					rpt_tail = (sending_ip + csv_separator)
-					rpt_tail += (receiving_mx_hostname + csv_separator)
-					rpt_tail += (receiving_mx_helo + csv_separator)
-					rpt_tail += (receiving_ip + csv_separator)
-					rpt_tail += (str(failed_session_count) + csv_separator)
-					rpt_tail += ('"' + additional_info + '"' + csv_separator)
-					rpt_tail += (failure_error_code)
-				else:
-					print ("Unrecognized output style")
-
-		if output_style in (['kv', 'gzip-json']):
-
-			rpt = ('process-time="' + process_time + '"')
-			rpt += (' report-id="' + report_id + '"')
-			rpt += (' organization-name="' + organization_name + '"')
-			rpt += (' start-date-time="' + start_date_time + '"')
-			rpt += (' end-date-time="' + end_date_time + '"')
-			rpt += (' contact-info="' + contact_info + '"')
-			rpt += (' policy-type="' + policy_type + '"')
-			rpt += (' policy-string="' + ",".join(policy_string) + '"')
-			rpt += (' policy-domain="' + policy_domain + '"')
-			rpt += (' policy-mx-host="' + policy_mx_host + '"')
-			rpt += (' policy-success-count="' + str(policy_success_count) + '"')
-			rpt += (' policy-failure-count="' + str(policy_failure_count) + '"')
-			rpt += rpt_tail
-			if output_style == 'kv':
-				print(rpt)
+			if 'failure-details' in policy_set:
+				rptJson["hasFailureDetails"] = True
+				for failure_details_set in policy_set["failure-details"]:
+					try:
+						rptJson["result_type"] = failure_details_set["result-type"]
+					except KeyError:
+						rptJson["result_type"] = ""
+					try:
+						rptJson["sending_ip"] = failure_details_set["sending-mta-ip"]
+					except KeyError:
+						rptJson["sending_ip"] = ""
+					try:
+						rptJson["receiving_mx_hostname"] = failure_details_set["receiving-mx-hostname"]
+					except KeyError:
+						rptJson["receiving_mx_hostname"] = ""
+					try:
+						rptJson["receiving_mx_helo"] = failure_details_set["receiving-mx-helo"]
+					except KeyError:
+						rptJson["receiving_mx_helo"] = None  # optional per RFC
+					try:
+						rptJson["receiving_ip"] = failure_details_set["receiving-ip"]
+					except KeyError:
+						rptJson["receiving_ip"] = ""
+					try:
+						rptJson["failed_session_count"] = failure_details_set["failed-session-count"]
+					except KeyError:
+						rptJson["failed_session_count"] = 0
+					try:
+						rptJson["additional_info"] = failure_details_set["additional-information"]
+					except KeyError:
+						rptJson["additional_info"] = None  # optional per RFC
+					try:
+						rptJson["failure_error_code"] = failure_details_set["failure-error-code"]
+					except KeyError:
+						rptJson["failure_error_code"] = ""
 			else:
-				rpt_fn = report_id + ".json.gz"
-				rpt_bytes = rpt.encode('utf-8')
-				with gzip.GzipFile(rpt_fn, 'w') as fout:
-					fout.write(rpt_bytes)
+				rptJson["hasFailureDetails"] = False
+	return rptJson
 
-		elif output_style in ('csv'):
+# Convert JSON data to specified output style
+def convert_to_output_style(output_style, rptJson, process_time):
+	if output_style == "gzip-json":
+		rptFinal = (json.dumps(rptJson)).encode('utf-8')
+		# rpt_fn = rptJson["report_id"] + ".json.gz"
+		# with gzip.GzipFile(rpt_fn, 'w') as fout:
+		# 	fout.write(rptFinal)
+	elif output_style == "csv":
+		rptFinal = (process_time + csv_separator)
+		rptFinal += (rptJson["report_id"] + csv_separator)
+		rptFinal += ('"' + rptJson["organization_name"] + '"' + csv_separator)
+		rptFinal += (rptJson["start_date_time"] + csv_separator)
+		rptFinal += (rptJson["end_date_time"] + csv_separator)
+		rptFinal += (rptJson["contact_info"] + csv_separator)
+		rptFinal += (rptJson["policy_type"] + csv_separator)
+		rptFinal += ('"' + csv_separator.join(rptJson["policy_string"]) + '"' + csv_separator)
+		rptFinal += (rptJson["policy_domain"] + csv_separator)
+		rptFinal += ('"' + rptJson["policy_mx_host"] + '"' + csv_separator)
+		rptFinal += (str(rptJson["policy_success_count"]) + csv_separator)
+		rptFinal += (str(rptJson["policy_failure_count"]))
+		if rptJson["hasFailureDetails"]:
+			rptFinal += (csv_separator + rptJson["result_type"] + csv_separator)
+			rptFinal += (rptJson["sending_ip"] + csv_separator)
+			rptFinal += (rptJson["receiving_mx_hostname"] + csv_separator)
+			if rptJson["receiving_mx_helo"]:
+				rptFinal += (rptJson["receiving_mx_helo"] + csv_separator)
+			rptFinal += (rptJson["receiving_ip"] + csv_separator)
+			rptFinal += (str(rptJson["failed_session_count"]) + csv_separator)
+			if rptJson["additional_info"]:
+				rptFinal += ('"' + rptJson["additional_info"] + '"' + csv_separator)
+			rptFinal += (rptJson["failure_error_code"])
+	elif output_style == "kv":
+		rptFinal = ('process-time="' + process_time + '"')
+		rptFinal += (' report-id="' + rptJson["report_id"] + '"')
+		rptFinal += (' organization-name="' + rptJson["organization_name"] + '"')
+		rptFinal += (' start-date-time="' + rptJson["start_date_time"] + '"')
+		rptFinal += (' end-date-time="' + rptJson["end_date_time"] + '"')
+		rptFinal += (' contact-info="' + rptJson["contact_info"] + '"')
+		rptFinal += (' policy-type="' + rptJson["policy_type"] + '"')
+		rptFinal += (' policy-string="' + ",".join(rptJson["policy_string"]) + '"')
+		rptFinal += (' policy-domain="' + rptJson["policy_domain"] + '"')
+		rptFinal += (' policy-mx-host="' + rptJson["policy_mx_host"] + '"')
+		rptFinal += (' policy-success-count="' + str(rptJson["policy_success_count"]) + '"')
+		rptFinal += (' policy-failure-count="' + str(rptJson["policy_failure_count"]) + '"')
+		if rptJson["hasFailureDetails"]:
+			rptFinal += (' result-type="' + rptJson["result_type"] + '"')
+			rptFinal += (' sending-ip="' + rptJson["sending_ip"] + '"')
+			rptFinal += (' receiving-mx-hostname="' + rptJson["receiving_mx_hostname"] + '"')
+			if rptJson["receiving_mx_helo"]:
+				rptFinal += (' receiving-mx-helo="' + rptJson["receiving_mx_helo"] + '"')
+			rptFinal += (' receiving-ip="' + rptJson["receiving_ip"] + '"')
+			rptFinal += (' failed-count="' + str(rptJson["failed_session_count"]) + '"')
+			if rptJson["additional_info"]:
+				rptFinal += (' additional-info="' + rptJson["additional_info"] + '"')
+			rptFinal += (' failure-error-code="' + rptJson["failure_error_code"] + '"')
+	else:
+		print ("Unrecognized output style")
+		show_help()
+		exit(1)
+	return rptFinal
 
-			rpt = (process_time + csv_separator)
-			rpt += (report_id + csv_separator)
-			rpt += ('"' + organization_name + '"' + csv_separator)
-			rpt += (start_date_time + csv_separator)
-			rpt += (end_date_time + csv_separator)
-			rpt += (contact_info + csv_separator)
-			rpt += (policy_type + csv_separator)
-			rpt += ('"' + csv_separator.join(policy_string) + '"' + csv_separator)
-			rpt += (policy_domain + csv_separator)
-			rpt += ('"' + policy_mx_host + '"' + csv_separator)
-			rpt += (str(policy_success_count) + csv_separator)
-			rpt += (str(policy_failure_count) + csv_separator)
-			rpt += rpt_tail
-			print(rpt)
+def main(input_file, output_style, send_method, destination):
+	global httpMaxRetries
+	process_time = "%15.0f" % time.time()
+	process_time = process_time.strip()
+	try:
+		rptJson = parse_input(input_file, process_time)
+	except:
+		print("Error parsing input file")
+		exit(2)
+	try:
+		rptFinal = convert_to_output_style(output_style, rptJson, process_time)
+	except Exception as e:
+		print("Error converting to output style")
+		exit(2)
+	if send_method == "http":
+		success = False
+		while httpMaxRetries > 0 and not success:
+			try:
+				print("POST %s" % destination)
+				rptHeaders = {'Content-type': 'application/tlsrpt+gzip'}  # RFC specified
+				r = requests.post(url=destination, data=rptFinal, headers=rptHeaders)
+				print("Got response: %s %s" % (r.status_code, r.reason))
+				success = True
+			except:
+				print("Error sending to %s" % destination)
+				httpMaxRetries -= 1
+	else:
+		print(rptFinal)
 
+
+if __name__ == "__main__":
+	try:
+		opts, args = getopt.getopt(sys.argv[1:],"i:o:h:s:d:",["input=","output-style=","help","send-method=","destination="])
+	except getopt.GetoptError as err:
+		print (str(err))
+		show_help()
+		sys.exit(2)
+	input_file = None
+	output_style = None
+	send_method = None
+	destination = None
+	for o,a in opts:
+		if o in ("-h","-help"):
+			show_help()
+			sys.exit()
+		elif o in ("-i","-input"):
+			input_file = a
+		elif o in ("-o","-output-style"):
+			output_style = a
+			if a not in ("kv","csv","gzip-json"):
+				show_help()
+				sys.exit(1)
+		elif o in ("-s","-send-method"):
+			send_method = a
+			if a not in ("http"):
+				show_help()
+				sys.exit(1)
+		elif o in ("-d","-destination"):
+			destination = a
 		else:
-			print ("Unrecognized output style")
+			assert False, "Unrecognized option"
+	# Arg validation
+	if input_file is None:
+		print("\nERROR: Input file is required")
+		show_help()
+		sys.exit(1)
+	try:
+		open(input_file,"r")
+	except IOError:
+		print("Input File does not exist or does not have the proper permissions")
+		sys.exit(1)
+	if send_method == "http":
+		if not destination:
+			print("\nERROR: Destiantion is required if send_method is http")
+			sys.exit(1)
+		if output_style != "gzip-json":
+			if output_style != None:
+				print("WARNING: Overriding output_style, must be gzip-jsop if send_method is http")
+			output_style = "gzip-json"
+	main(input_file, output_style, send_method, destination)
